@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rust Struct Alignment and Packing Analysis - KazukiKanda</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      line-height: 1.6;
+      padding: 2rem;
+      max-width: 800px;
+      margin: auto;
+      background-color: #fdfdfd;
+      color: #333;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      color: #222;
+    }
+    a {
+      color: #007acc;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .nav-link {
+      display: inline-block;
+      margin-bottom: 1rem;
+      padding: 0.5rem 1rem;
+      background-color: #f0f0f0;
+      border-radius: 4px;
+    }
+    .article-meta {
+      background-color: #f8f9fa;
+      padding: 1rem;
+      border-radius: 4px;
+      margin-bottom: 2rem;
+    }
+    pre {
+      background-color: #f4f4f4;
+      padding: 1rem;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    code {
+      background-color: #f4f4f4;
+      padding: 0.2rem 0.4rem;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+    }
+    pre code {
+      background-color: transparent;
+      padding: 0;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1rem 0;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 0.5rem;
+      text-align: left;
+    }
+    th {
+      background-color: #f5f5f5;
+    }
+  </style>
+</head>
+<body>
+
+  <a href="../blog.html" class="nav-link">← Back to Blog</a>
+
+  <h1>Rust Struct Alignment and Packing Analysis</h1>
+
+  <div class="article-meta">
+    <div><strong>Published:</strong> July 5, 2025</div>
+    <div><strong>Tags:</strong> rust, c, structs</div>
+  </div>
+
+  <h2>Introduction</h2>
+  <p>As a Rust newcomer, I wanted to dive deeper into the reality of struct memory layout. This article explores different struct representation modes and their impact on memory usage and alignment.</p>
+
+  <h2>System Specifications</h2>
+  <p>MacBook Air M2 arm64</p>
+
+  <h2>Background Knowledge</h2>
+  <h3>Struct Memory Layout</h3>
+  <p>Understanding struct memory layout is crucial for systems programming, especially when interfacing with C code or optimizing for memory usage. Different representation attributes in Rust provide fine-grained control over how structs are laid out in memory.</p>
+
+  <h2>Setup</h2>
+  <h3>Docker Environment Setup</h3>
+  <pre><code>mkdir rust-align && cd rust-align
+cat << 'EOF' > Dockerfile
+FROM rust:latest
+RUN apt update && apt install -y vim
+WORKDIR /workspace
+EOF
+docker build -t rust-align .
+docker run --rm -it -v "$(pwd)":/workspace rust-align</code></pre>
+
+  <h2>Experiment</h2>
+  <p>We'll test five different representation modes:</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Flag Name</th>
+        <th>repr Attribute</th>
+        <th>Use Case</th>
+        <th>Build Command</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>repr_rust</code></td>
+        <td><em>(no attribute)</em><br>= <strong><code>repr(Rust)</code></strong></td>
+        <td>Rust-optimized safe default. Field order preserved but future reordering optimization possible.</td>
+        <td><code>rustc --cfg repr_rust layout.rs -o rust</code></td>
+      </tr>
+      <tr>
+        <td><code>repr_c</code></td>
+        <td><code>#[repr(C)]</code></td>
+        <td><strong>C ABI compatible</strong>. Strict declaration order and C padding rules. Safe for FFI.</td>
+        <td><code>rustc --cfg repr_c layout.rs -o c</code></td>
+      </tr>
+      <tr>
+        <td><code>repr_packed1</code></td>
+        <td><code>#[repr(C, packed)]</code></td>
+        <td><strong>1-byte alignment</strong> with zero gaps. For I/O or network headers. Field references are <em>unsafe</em>.</td>
+        <td><code>rustc --cfg repr_packed1 layout.rs -o p1</code></td>
+      </tr>
+      <tr>
+        <td><code>repr_packed2</code></td>
+        <td><code>#[repr(C, packed(2))]</code></td>
+        <td><strong>2-byte alignment</strong> (e.g., BLE GATT protocols assuming 16-bit boundaries).</td>
+        <td><code>rustc --cfg repr_packed2 layout.rs -o p2</code></td>
+      </tr>
+      <tr>
+        <td><code>repr_align8</code></td>
+        <td><code>#[repr(C, align(8))]</code></td>
+        <td><strong>8-byte boundary</strong> enforcement. For SIMD/DMA bursts or hardware constraints.</td>
+        <td><code>rustc --cfg repr_align8 layout.rs -o a8</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Test Code</h3>
+  <pre><code>// layout.rs - cfg flag switches between 5 patterns
+#[cfg(repr_rust)]        #[derive(Debug)] struct L { a: u8, b: u32, c: u16 }
+#[cfg(repr_c)]           #[repr(C)]       struct L { a: u8, b: u32, c: u16 }
+#[cfg(repr_packed1)]     #[repr(C, packed)]       struct L { a: u8, b: u32, c: u16 }
+#[cfg(repr_packed2)]     #[repr(C, packed(2))]    struct L { a: u8, b: u32, c: u16 }
+#[cfg(repr_align8)]      #[repr(C, align(8))]     struct L { a: u8, b: u32, c: u16 }
+
+fn main() {
+    println!("size  = {}", std::mem::size_of::<L>());
+    println!("align = {}", std::mem::align_of::<L>());
+}</code></pre>
+
+  <h2>Results</h2>
+  <pre><code># Default repr(Rust) - auto optimization (minimal padding)
+rustc --cfg repr_rust layout.rs   -o rust  && ./rust
+size  = 8
+align = 4
+
+# C compatible (declaration order, C ABI)
+rustc --cfg repr_c    layout.rs   -o c     && ./c
+size  = 12
+align = 4
+
+# Complete packing (1-byte units)
+rustc --cfg repr_packed1 layout.rs -o p1    && ./p1
+size  = 7
+align = 1
+
+# Specified width packing (2-byte boundary)
+rustc --cfg repr_packed2 layout.rs -o p2    && ./p2
+size  = 8
+align = 2
+
+# Forced alignment 8
+rustc --cfg repr_align8  layout.rs -o a8    && ./a8
+size  = 16
+align = 8</code></pre>
+
+  <h3>Summary Table</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Mode</th>
+        <th>Size</th>
+        <th>Alignment</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>repr(Rust)</code></td>
+        <td>8B</td>
+        <td>4B</td>
+      </tr>
+      <tr>
+        <td><code>repr(C)</code></td>
+        <td>12B</td>
+        <td>4B</td>
+      </tr>
+      <tr>
+        <td><code>repr(C, packed)</code></td>
+        <td>7B</td>
+        <td>1B</td>
+      </tr>
+      <tr>
+        <td><code>repr(C, packed(2))</code></td>
+        <td>8B</td>
+        <td>2B</td>
+      </tr>
+      <tr>
+        <td><code>repr(C, align(8))</code></td>
+        <td>16B</td>
+        <td>8B</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Conclusion</h2>
+  <p>Rust structs can be memory-optimized based on the chosen representation mode:</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Mode</th>
+        <th>Size</th>
+        <th>Alignment</th>
+        <th>Explanation</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>repr(Rust)</code></td>
+        <td>8B</td>
+        <td>4B</td>
+        <td>Rust automatically adds 1-byte padding, aligning to 8-byte boundaries</td>
+      </tr>
+      <tr>
+        <td><code>repr(C)</code></td>
+        <td>12B</td>
+        <td>4B</td>
+        <td>Declaration order maintained: <code>u8(1)</code> + <em>padding(3)</em> + <code>u32(4)</code> + <code>u16(2)</code> + <em>padding(2)</em></td>
+      </tr>
+      <tr>
+        <td><code>packed(1)</code></td>
+        <td>7B</td>
+        <td>1B</td>
+        <td>All gaps removed, but <code>b</code> becomes misaligned</td>
+      </tr>
+      <tr>
+        <td><code>packed(2)</code></td>
+        <td>8B</td>
+        <td>2B</td>
+        <td>Packed to 2-byte boundaries, total size becomes 8</td>
+      </tr>
+      <tr>
+        <td><code>align(8)</code></td>
+        <td>16B</td>
+        <td>8B</td>
+        <td>Padding added at the end to satisfy 8-byte alignment</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>Understanding these representation modes is essential for writing efficient Rust code, especially when working with systems programming, FFI, or memory-constrained environments.</p>
+
+</body>
+</html>

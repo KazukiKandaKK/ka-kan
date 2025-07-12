@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rust Safety Exploration: Testing Intentional Crashes - KazukiKanda</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      line-height: 1.6;
+      padding: 2rem;
+      max-width: 800px;
+      margin: auto;
+      background-color: #fdfdfd;
+      color: #333;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      color: #222;
+    }
+    a {
+      color: #007acc;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .nav-link {
+      display: inline-block;
+      margin-bottom: 1rem;
+      padding: 0.5rem 1rem;
+      background-color: #f0f0f0;
+      border-radius: 4px;
+    }
+    .article-meta {
+      background-color: #f8f9fa;
+      padding: 1rem;
+      border-radius: 4px;
+      margin-bottom: 2rem;
+    }
+    pre {
+      background-color: #f4f4f4;
+      padding: 1rem;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    code {
+      background-color: #f4f4f4;
+      padding: 0.2rem 0.4rem;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+    }
+    pre code {
+      background-color: transparent;
+      padding: 0;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1rem 0;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 0.5rem;
+      text-align: left;
+    }
+    th {
+      background-color: #f5f5f5;
+    }
+  </style>
+</head>
+<body>
+
+  <a href="../blog.html" class="nav-link">← Back to Blog</a>
+
+  <h1>Rust Safety Exploration: Testing Intentional Crashes</h1>
+
+  <div class="article-meta">
+    <div><strong>Published:</strong> July 2, 2025</div>
+    <div><strong>Tags:</strong> rust, compiler, c</div>
+  </div>
+
+  <h2>Introduction</h2>
+  <p>As I've been learning Rust through browser-based books, I wanted to test whether it's possible to intentionally crash programs like in C. The result demonstrates that Rust's compiler is remarkably robust.</p>
+
+  <h2>System Specifications</h2>
+  <p>MacBook Air M2 arm64</p>
+
+  <h2>Setup</h2>
+  <h3>Docker Launch and Installation</h3>
+  <pre><code>docker run -it --rm -v $(pwd):/mnt rust:latest bash
+apt update && apt install -y gcc make vim build-essential</code></pre>
+
+  <h2>Test Categories</h2>
+  <p>We'll systematically test the following aspects:</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Test Case</th>
+        <th>C Language</th>
+        <th>Rust</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Access to freed memory</td>
+        <td>❌ Crashes/undefined behavior</td>
+        <td>✅ Compile-time prevention</td>
+      </tr>
+      <tr>
+        <td>Null pointer dereference</td>
+        <td>❌ Segmentation fault</td>
+        <td>✅ Option&lt;T&gt; system</td>
+      </tr>
+      <tr>
+        <td>Invalid references</td>
+        <td>❌ Undefined behavior</td>
+        <td>✅ Borrow checker</td>
+      </tr>
+      <tr>
+        <td>Buffer overflow</td>
+        <td>❌ Memory corruption</td>
+        <td>✅ Bounds checking</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Test Results</h2>
+  <h3>Access to Freed Memory</h3>
+  <h4>C Language Example</h4>
+  <pre><code>#include &lt;stdlib.h&gt;
+#include &lt;stdio.h&gt;
+
+int main() {
+    int* p = malloc(sizeof(int));
+    *p = 10;
+    free(p);
+    printf("%d\n", *p);  // Undefined behavior!
+    return 0;
+}</code></pre>
+
+  <h4>Rust Equivalent</h4>
+  <pre><code>fn main() {
+    let p = Box::new(10);
+    drop(p);
+    // println!("{}", *p);  // Compile error!
+}</code></pre>
+  <p><strong>Result:</strong> Rust prevents this at compile time with ownership rules.</p>
+
+  <h3>Null Pointer Dereference</h3>
+  <h4>C Language</h4>
+  <pre><code>int* p = NULL;
+*p = 42;  // Segmentation fault</code></pre>
+
+  <h4>Rust Approach</h4>
+  <pre><code>let p: Option&lt;i32&gt; = None;
+match p {
+    Some(value) => println!("{}", value),
+    None => println!("No value"),
+}</code></pre>
+  <p><strong>Result:</strong> Rust's Option type eliminates null pointer dereferences entirely.</p>
+
+  <h3>Invalid References</h3>
+  <h4>Dangling Pointer in C</h4>
+  <pre><code>int* create_dangling() {
+    int x = 42;
+    return &x;  // Returns address of local variable
+}</code></pre>
+
+  <h4>Rust's Prevention</h4>
+  <pre><code>fn create_dangling() -> &i32 {
+    let x = 42;
+    &x  // Compile error: borrowed value does not live long enough
+}</code></pre>
+  <p><strong>Result:</strong> Rust's borrow checker prevents dangling references at compile time.</p>
+
+  <h3>Buffer Overflow</h3>
+  <h4>C Language</h4>
+  <pre><code>char buffer[10];
+strcpy(buffer, "This string is way too long!");  // Buffer overflow</code></pre>
+
+  <h4>Rust's Safety</h4>
+  <pre><code>let mut buffer = [0u8; 10];
+let data = b"This string is way too long!";
+// buffer.copy_from_slice(data);  // Panic with bounds check
+</code></pre>
+  <p><strong>Result:</strong> Rust performs bounds checking and panics safely instead of corrupting memory.</p>
+
+  <h2>Key Safety Features</h2>
+  <h3>Ownership System</h3>
+  <ul>
+    <li>Each value has exactly one owner</li>
+    <li>Ownership can be transferred (moved)</li>
+    <li>Automatic cleanup when owner goes out of scope</li>
+  </ul>
+
+  <h3>Borrow Checker</h3>
+  <ul>
+    <li>Prevents data races at compile time</li>
+    <li>Enforces lifetime rules</li>
+    <li>Eliminates use-after-free bugs</li>
+  </ul>
+
+  <h3>Type System</h3>
+  <ul>
+    <li>Option&lt;T&gt; replaces null pointers</li>
+    <li>Result&lt;T, E&gt; for error handling</li>
+    <li>Strong static typing prevents many runtime errors</li>
+  </ul>
+
+  <h2>When Rust Does Allow "Unsafe"</h2>
+  <p>Rust does provide an <code>unsafe</code> keyword for scenarios requiring low-level control:</p>
+  <pre><code>unsafe {
+    let p = 0x12345678 as *const i32;
+    println!("{}", *p);  // This CAN crash
+}</code></pre>
+  <p>However, unsafe blocks are:</p>
+  <ul>
+    <li>Explicitly marked and auditable</li>
+    <li>Kept to a minimum in most codebases</li>
+    <li>Still subject to many safety checks</li>
+  </ul>
+
+  <h2>Conclusion</h2>
+  <p>Rust's compiler demonstrates remarkable robustness in preventing common memory safety issues that plague C programs. Through its ownership system, borrow checker, and strong type system, Rust eliminates entire classes of bugs at compile time rather than allowing them to manifest as runtime crashes.</p>
+  
+  <p>While it's possible to write unsafe code in Rust, it requires explicit opt-in and is designed to be rare and auditable. This makes Rust an excellent choice for systems programming where both performance and safety are critical.</p>
+
+</body>
+</html>

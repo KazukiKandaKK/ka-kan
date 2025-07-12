@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deep Dive into Ruby's puts and p: System Call Analysis - KazukiKanda</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      line-height: 1.6;
+      padding: 2rem;
+      max-width: 800px;
+      margin: auto;
+      background-color: #fdfdfd;
+      color: #333;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      color: #222;
+    }
+    a {
+      color: #007acc;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .nav-link {
+      display: inline-block;
+      margin-bottom: 1rem;
+      padding: 0.5rem 1rem;
+      background-color: #f0f0f0;
+      border-radius: 4px;
+    }
+    .article-meta {
+      background-color: #f8f9fa;
+      padding: 1rem;
+      border-radius: 4px;
+      margin-bottom: 2rem;
+    }
+    pre {
+      background-color: #f4f4f4;
+      padding: 1rem;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    code {
+      background-color: #f4f4f4;
+      padding: 0.2rem 0.4rem;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+    }
+    pre code {
+      background-color: transparent;
+      padding: 0;
+    }
+    img {
+      max-width: 100%;
+      height: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <a href="../blog.html" class="nav-link">← Back to Blog</a>
+
+  <h1>Deep Dive into Ruby's puts and p: System Call Analysis</h1>
+
+  <div class="article-meta">
+    <div><strong>Published:</strong> June 29, 2025</div>
+    <div><strong>Tags:</strong> ruby</div>
+  </div>
+
+  <h2>Introduction</h2>
+  <p>Ruby's 'puts' and 'p' methods are commonly used for debugging and output. For example, both return "hello", but what happens internally?</p>
+  
+  <pre><code>$ puts "hello"
+hello
+$ p "hello"
+"hello"</code></pre>
+
+  <p>This article explores the internals of 'puts' and 'p'. The investigation reveals that both functions call the write system call, but in different ways. Despite Ruby being written in C, it doesn't use printf for its standard output functionality.</p>
+
+  <h2>System Specifications</h2>
+  <p>MacBook Air M2 arm64<br>
+  Running Ubuntu 24.04 on Docker</p>
+
+  <h3>Quick Ubuntu Virtual Environment Setup from Mac</h3>
+  <pre><code># Create Dockerfile and build
+docker build -t ruby-syscall - <<'EOF'
+FROM ubuntu:24.04
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ruby-full gcc strace linux-tools-common && \
+    rm -rf /var/lib/apt/lists/*
+WORKDIR /ws
+EOF
+
+# Enter container
+echo 'puts "hello from puts"; p "hello from p"' > test.rb && \
+docker run --privileged -it --rm -v "$PWD/test.rb":/ws/test.rb ruby-syscall</code></pre>
+
+  <h2>Background Knowledge</h2>
+  <h3>System Calls</h3>
+  <p>This article deals with system calls - mechanisms for invoking OS functionality. When high-level languages output text to stdout or control file I/O, system calls are invoked deep in the code.</p>
+  
+  <p>The simple conceptual model shows that application code doesn't directly access kernel space, but interacts with the OS and hardware through system calls, acting as an interface layer.</p>
+  
+  <img src="https://storage.googleapis.com/zenn-user-upload/3660fc7a58f3-20250628.png" alt="System call diagram">
+
+  <h2>Investigation Process</h2>
+  <h3>Using strace to Monitor System Calls</h3>
+  <p>We can use strace to monitor what system calls are made when Ruby executes puts and p:</p>
+  
+  <pre><code>strace -e write ruby test.rb</code></pre>
+
+  <h2>Key Findings</h2>
+  <h3>puts vs p System Call Patterns</h3>
+  <p>Both puts and p ultimately use the write system call, but they differ in their approach:</p>
+
+  <h4>puts behavior:</h4>
+  <ul>
+    <li>Directly writes the string value</li>
+    <li>Automatically adds a newline character</li>
+    <li>More efficient for simple string output</li>
+  </ul>
+
+  <h4>p behavior:</h4>
+  <ul>
+    <li>First converts the object to its inspect representation</li>
+    <li>Writes the inspected string (including quotes for strings)</li>
+    <li>Better for debugging as it shows the actual object representation</li>
+  </ul>
+
+  <h3>Ruby's Output Implementation</h3>
+  <p>Interesting discoveries about Ruby's implementation:</p>
+  <ul>
+    <li>Ruby doesn't use C's printf for standard output</li>
+    <li>Instead, it implements its own output system using direct write system calls</li>
+    <li>This gives Ruby more control over formatting and buffering behavior</li>
+    <li>Both methods ultimately funnel through Ruby's internal IO system</li>
+  </ul>
+
+  <h2>System Call Sequence Analysis</h2>
+  <p>When examining the system call traces, we can observe:</p>
+  
+  <ol>
+    <li><strong>File descriptor setup</strong>: Ruby sets up stdout (fd=1)</li>
+    <li><strong>String processing</strong>: Different processing for puts vs p</li>
+    <li><strong>Write operations</strong>: Direct write system calls to stdout</li>
+    <li><strong>Buffer management</strong>: Ruby manages its own output buffering</li>
+  </ol>
+
+  <h2>Performance Implications</h2>
+  <p>Understanding these internals helps with performance considerations:</p>
+  <ul>
+    <li>puts is generally faster for simple string output</li>
+    <li>p has overhead from object inspection</li>
+    <li>Both avoid the overhead of C's printf formatting</li>
+    <li>Ruby's custom implementation allows for optimizations specific to Ruby's object model</li>
+  </ul>
+
+  <h2>Conclusion</h2>
+  <p>This exploration reveals that Ruby's output methods are more sophisticated than they appear on the surface. By implementing custom output handling rather than relying on C's printf, Ruby maintains better control over object representation and output formatting. Understanding these system-level details helps developers write more efficient Ruby code and debug output-related issues more effectively.</p>
+
+</body>
+</html>

@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Simple UDP Implementation in Rust - KazukiKanda</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      line-height: 1.6;
+      padding: 2rem;
+      max-width: 800px;
+      margin: auto;
+      background-color: #fdfdfd;
+      color: #333;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      color: #222;
+    }
+    a {
+      color: #007acc;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .nav-link {
+      display: inline-block;
+      margin-bottom: 1rem;
+      padding: 0.5rem 1rem;
+      background-color: #f0f0f0;
+      border-radius: 4px;
+    }
+    .article-meta {
+      background-color: #f8f9fa;
+      padding: 1rem;
+      border-radius: 4px;
+      margin-bottom: 2rem;
+    }
+    pre {
+      background-color: #f4f4f4;
+      padding: 1rem;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    code {
+      background-color: #f4f4f4;
+      padding: 0.2rem 0.4rem;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+    }
+    pre code {
+      background-color: transparent;
+      padding: 0;
+    }
+    img {
+      max-width: 100%;
+      height: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <a href="../blog.html" class="nav-link">← Back to Blog</a>
+
+  <h1>Simple UDP Implementation in Rust</h1>
+
+  <div class="article-meta">
+    <div><strong>Published:</strong> July 6, 2025</div>
+    <div><strong>Tags:</strong> rust, beginner-friendly, networking, udp</div>
+  </div>
+
+  <h2>Introduction</h2>
+  <p>This article demonstrates how to implement UDP networking in Rust, providing a practical introduction to network programming concepts.</p>
+
+  <h2>System Specifications</h2>
+  <p>MacBook Air M2 arm64</p>
+
+  <h2>Background Knowledge</h2>
+  <h3>What is UDP?</h3>
+  <p>UDP (User Datagram Protocol) is a transport layer protocol in the OSI reference model.</p>
+  <img src="https://storage.googleapis.com/zenn-user-upload/d156ab2fa4ea-20250705.png" alt="OSI Model">
+  
+  <p>In the transport layer, there are two representative protocols: TCP and UDP.</p>
+  <ul>
+    <li><strong>TCP</strong>: Reliable communication with connection-oriented approach</li>
+    <li><strong>UDP</strong>: Broadcast communication, one-way data transmission (connectionless)</li>
+  </ul>
+
+  <p>Neither TCP nor UDP is superior; they serve different purposes:</p>
+  <ul>
+    <li><strong>TCP</strong>: On-demand video streaming, web browsing</li>
+    <li><strong>UDP</strong>: VoIP, live TV broadcasting, real-time applications</li>
+  </ul>
+  
+  <p>The choice depends on whether real-time performance or reliable delivery is more important.</p>
+
+  <h3>UDP Packet Structure</h3>
+  <p>UDP packets have a simple structure:</p>
+  <img src="https://storage.googleapis.com/zenn-user-upload/6ee6ae395e49-20250705.png" alt="UDP Packet Structure">
+  
+  <p>The UDP header contains:</p>
+  <ul>
+    <li><strong>Source Port</strong> (16 bits): Sender's port number</li>
+    <li><strong>Destination Port</strong> (16 bits): Receiver's port number</li>
+    <li><strong>Length</strong> (16 bits): UDP header + data length</li>
+    <li><strong>Checksum</strong> (16 bits): Error detection</li>
+  </ul>
+
+  <h2>Setup</h2>
+  <h3>Docker Environment</h3>
+  <pre><code>docker run --rm -it --name rust-udp -v "$PWD":/app rust:1.78 bash
+# Inside container
+apt-get update
+apt-get install -y vim
+
+cd /app
+cargo new --bin udp_demo
+cd udp_demo</code></pre>
+
+  <h2>Implementation</h2>
+  <h3>File Preparation</h3>
+  <h4>Server Side</h4>
+  <pre><code>mkdir -p src/bin
+
+cat <<'EOF' > src/bin/server.rs
+use std::net::UdpSocket;
+
+fn main() -> std::io::Result<()> {
+    // Bind to localhost port 8080
+    let socket = UdpSocket::bind("127.0.0.1:8080")?;
+    println!("UDP Server listening on 127.0.0.1:8080");
+
+    let mut buffer = [0; 1024];
+    
+    loop {
+        // Receive data from client
+        match socket.recv_from(&mut buffer) {
+            Ok((size, src)) => {
+                let received = String::from_utf8_lossy(&buffer[..size]);
+                println!("Received from {}: {}", src, received);
+                
+                // Echo back to client
+                let response = format!("Echo: {}", received);
+                socket.send_to(response.as_bytes(), src)?;
+            }
+            Err(e) => {
+                eprintln!("Error receiving data: {}", e);
+            }
+        }
+    }
+}
+EOF</code></pre>
+
+  <h4>Client Side</h4>
+  <pre><code>cat <<'EOF' > src/bin/client.rs
+use std::net::UdpSocket;
+use std::io::{self, Write};
+
+fn main() -> std::io::Result<()> {
+    // Create UDP socket
+    let socket = UdpSocket::bind("127.0.0.1:0")?;
+    let server_addr = "127.0.0.1:8080";
+    
+    println!("UDP Client connected to {}", server_addr);
+    println!("Type messages to send (Ctrl+C to exit):");
+
+    loop {
+        // Get user input
+        print!("> ");
+        io::stdout().flush()?;
+        
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        let message = input.trim();
+        
+        if message.is_empty() {
+            continue;
+        }
+        
+        // Send message to server
+        socket.send_to(message.as_bytes(), server_addr)?;
+        
+        // Receive response
+        let mut buffer = [0; 1024];
+        match socket.recv_from(&mut buffer) {
+            Ok((size, _)) => {
+                let response = String::from_utf8_lossy(&buffer[..size]);
+                println!("Server response: {}", response);
+            }
+            Err(e) => {
+                eprintln!("Error receiving response: {}", e);
+            }
+        }
+    }
+}
+EOF</code></pre>
+
+  <h2>Testing the Implementation</h2>
+  <h3>Building and Running</h3>
+  <pre><code># Build both binaries
+cargo build
+
+# Terminal 1: Start server
+cargo run --bin server
+
+# Terminal 2: Start client
+cargo run --bin client</code></pre>
+
+  <h3>Example Session</h3>
+  <pre><code># Server output:
+UDP Server listening on 127.0.0.1:8080
+Received from 127.0.0.1:54321: Hello UDP!
+Received from 127.0.0.1:54321: How are you?
+
+# Client output:
+UDP Client connected to 127.0.0.1:8080
+Type messages to send (Ctrl+C to exit):
+> Hello UDP!
+Server response: Echo: Hello UDP!
+> How are you?
+Server response: Echo: How are you?</code></pre>
+
+  <h2>Key Concepts Demonstrated</h2>
+  <h3>UDP Socket Operations</h3>
+  <ul>
+    <li><strong>bind()</strong>: Associate socket with local address</li>
+    <li><strong>send_to()</strong>: Send data to specific address</li>
+    <li><strong>recv_from()</strong>: Receive data and sender's address</li>
+  </ul>
+
+  <h3>Error Handling</h3>
+  <p>Rust's Result type ensures proper error handling:</p>
+  <pre><code>match socket.recv_from(&mut buffer) {
+    Ok((size, src)) => { /* handle success */ }
+    Err(e) => { /* handle error */ }
+}</code></pre>
+
+  <h3>Memory Safety</h3>
+  <p>Buffer operations are bounds-checked, preventing overflow vulnerabilities common in C networking code.</p>
+
+  <h2>Advantages of UDP</h2>
+  <ul>
+    <li><strong>Low latency</strong>: No connection establishment overhead</li>
+    <li><strong>Simple protocol</strong>: Minimal header overhead</li>
+    <li><strong>Broadcast support</strong>: Can send to multiple recipients</li>
+    <li><strong>No connection state</strong>: Stateless communication</li>
+  </ul>
+
+  <h2>Disadvantages of UDP</h2>
+  <ul>
+    <li><strong>No reliability guarantees</strong>: Packets may be lost</li>
+    <li><strong>No ordering</strong>: Packets may arrive out of order</li>
+    <li><strong>No flow control</strong>: Can overwhelm receivers</li>
+    <li><strong>No congestion control</strong>: May contribute to network congestion</li>
+  </ul>
+
+  <h2>Conclusion</h2>
+  <p>This UDP implementation in Rust demonstrates the language's strengths in network programming: memory safety, clear error handling, and clean APIs. While UDP lacks the reliability of TCP, its simplicity and performance make it ideal for real-time applications where speed is more important than guaranteed delivery.</p>
+  
+  <p>Rust's standard library provides excellent abstractions for network programming while maintaining the performance characteristics needed for systems-level networking code.</p>
+
+</body>
+</html>

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deep Dive into Ruby's require System - KazukiKanda</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      line-height: 1.6;
+      padding: 2rem;
+      max-width: 800px;
+      margin: auto;
+      background-color: #fdfdfd;
+      color: #333;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      color: #222;
+    }
+    a {
+      color: #007acc;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .nav-link {
+      display: inline-block;
+      margin-bottom: 1rem;
+      padding: 0.5rem 1rem;
+      background-color: #f0f0f0;
+      border-radius: 4px;
+    }
+    .article-meta {
+      background-color: #f8f9fa;
+      padding: 1rem;
+      border-radius: 4px;
+      margin-bottom: 2rem;
+    }
+    pre {
+      background-color: #f4f4f4;
+      padding: 1rem;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    code {
+      background-color: #f4f4f4;
+      padding: 0.2rem 0.4rem;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+    }
+    pre code {
+      background-color: transparent;
+      padding: 0;
+    }
+  </style>
+</head>
+<body>
+
+  <a href="../blog.html" class="nav-link">← Back to Blog</a>
+
+  <h1>Deep Dive into Ruby's require System</h1>
+
+  <div class="article-meta">
+    <div><strong>Published:</strong> June 30, 2025</div>
+    <div><strong>Tags:</strong> ruby</div>
+  </div>
+
+  <h2>Introduction</h2>
+  <p>Driven by curiosity about what happens inside Ruby's require mechanism, I decided to investigate its internal workings.</p>
+
+  <h2>System Specifications</h2>
+  <p>MacBook Air M2 arm64</p>
+
+  <h2>Background Knowledge</h2>
+  <h3>System Calls</h3>
+  <p>This topic has been covered in detail in previous articles about system calls and their role in operating system interactions.</p>
+
+  <h2>Setup</h2>
+  <h3>Docker Container Environment Setup</h3>
+  <p>Launch and connect to an Ubuntu 24.04 virtual environment on Docker:</p>
+  <pre><code>docker run -it --rm -v $(pwd):/mnt ubuntu:24.04 bash</code></pre>
+
+  <p>Install necessary packages inside the container:</p>
+  <pre><code>apt update && apt install -y ruby-full build-essential autoconf automake libtool gdb strace git \
+  libyaml-dev libssl-dev zlib1g-dev \
+  libffi-dev libgdbm-dev libreadline-dev libncurses-dev \
+  pkg-config libsqlite3-dev</code></pre>
+
+  <h3>Building Ruby in Debug Mode</h3>
+  <pre><code>git clone https://github.com/ruby/ruby.git
+cd ruby
+
+./autogen.sh
+./configure --prefix=/usr/local/ruby-debug --enable-debug-env CFLAGS='-O0 -g3'
+make -j8
+make install</code></pre>
+
+  <h3>Creating Test Source Code</h3>
+  <p>Prepare a simple file that just requires a library:</p>
+  <pre><code>echo 'require "json"' > require_json.rb</code></pre>
+
+  <h2>Investigation Through IRB</h2>
+  <p>Using IRB (Interactive Ruby) to examine the require process in detail reveals the complex mechanisms Ruby employs to load and manage dependencies.</p>
+
+  <h2>Key Findings</h2>
+  <h3>File Loading Process</h3>
+  <p>Ruby's require system involves several steps:</p>
+  <ol>
+    <li><strong>Path Resolution</strong>: Ruby searches through the load path ($LOAD_PATH) to find the requested file</li>
+    <li><strong>File Type Detection</strong>: Determines whether it's a Ruby file (.rb) or an extension (.so, .dll)</li>
+    <li><strong>Duplicate Prevention</strong>: Checks if the file has already been loaded using $LOADED_FEATURES</li>
+    <li><strong>Loading and Execution</strong>: Loads and executes the file content</li>
+  </ol>
+
+  <h3>Load Path Management</h3>
+  <p>Ruby maintains a global array <code>$LOAD_PATH</code> that contains directories to search for files. This includes:</p>
+  <ul>
+    <li>Standard library directories</li>
+    <li>Gem installation paths</li>
+    <li>Custom paths added by applications</li>
+  </ul>
+
+  <h3>Caching Mechanism</h3>
+  <p>Ruby uses <code>$LOADED_FEATURES</code> (also accessible as <code>$"</code>) to track already loaded files, preventing duplicate loading and circular dependencies.</p>
+
+  <h2>System Call Analysis</h2>
+  <p>At the system level, require operations involve multiple system calls:</p>
+  <ul>
+    <li><strong>stat/lstat</strong>: File existence and metadata checks</li>
+    <li><strong>open/openat</strong>: File opening operations</li>
+    <li><strong>read</strong>: Reading file contents</li>
+    <li><strong>close</strong>: Closing file descriptors</li>
+  </ul>
+
+  <h2>Performance Considerations</h2>
+  <p>Understanding require's internals helps optimize application startup:</p>
+  <ul>
+    <li>Minimize the number of requires in hot code paths</li>
+    <li>Use autoload for lazy loading when appropriate</li>
+    <li>Consider require order to avoid unnecessary file system operations</li>
+  </ul>
+
+  <h2>Conclusion</h2>
+  <p>Ruby's require system is a sophisticated mechanism that balances flexibility, safety, and performance. By understanding its internals, developers can write more efficient Ruby applications and better troubleshoot loading issues. The combination of path resolution, caching, and system-level file operations creates a robust foundation for Ruby's module system.</p>
+
+</body>
+</html>

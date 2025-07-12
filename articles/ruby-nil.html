@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Investigating Ruby's nil: Is it null? - KazukiKanda</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      line-height: 1.6;
+      padding: 2rem;
+      max-width: 800px;
+      margin: auto;
+      background-color: #fdfdfd;
+      color: #333;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      color: #222;
+    }
+    a {
+      color: #007acc;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .nav-link {
+      display: inline-block;
+      margin-bottom: 1rem;
+      padding: 0.5rem 1rem;
+      background-color: #f0f0f0;
+      border-radius: 4px;
+    }
+    .article-meta {
+      background-color: #f8f9fa;
+      padding: 1rem;
+      border-radius: 4px;
+      margin-bottom: 2rem;
+    }
+    pre {
+      background-color: #f4f4f4;
+      padding: 1rem;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    code {
+      background-color: #f4f4f4;
+      padding: 0.2rem 0.4rem;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+    }
+    pre code {
+      background-color: transparent;
+      padding: 0;
+    }
+    img {
+      max-width: 100%;
+      height: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <a href="../blog.html" class="nav-link">← Back to Blog</a>
+
+  <h1>Investigating Ruby's nil: Is it null?</h1>
+
+  <div class="article-meta">
+    <div><strong>Published:</strong> July 8, 2025</div>
+    <div><strong>Tags:</strong> ruby, null</div>
+  </div>
+
+  <h2>Introduction</h2>
+  <p>When encountering nil in Ruby, I've always wondered "Is this actually null?" This article dives deep into understanding what Ruby's nil really is.</p>
+
+  <h2>System Specifications</h2>
+  <p>MacBook Air M2 arm64</p>
+
+  <h2>Background Knowledge</h2>
+  <h3>Null</h3>
+  <p>Null means "pointing to nothing." Accessing a null reference results in a null pointer access. Think of it as representing nothingness or void.</p>
+
+  <h3>Pointers</h3>
+  <p>A pointer refers to the memory address of variables, functions, or other data structures. For functions and arrays, it points to the starting address of the allocated memory region. Multi-dimensional arrays have more complex referencing patterns, but we'll skip that for now.</p>
+  <p>In the simplified diagram below, when we define <code>int a = 1;</code>, it's stored at memory address 0x0000_XXX1. When we define b as a pointer type and reference &a, b points to the memory address of a.</p>
+  <img src="https://storage.googleapis.com/zenn-user-upload/c6f195d061ea-20250628.png" alt="Pointer diagram">
+
+  <h3>Null Pointers</h3>
+  <p>Based on the pointer concept above, what happens when we reference null? Since null represents nothing, the computer doesn't know what to reference, leading to crashes or unexpected behavior.</p>
+  <p>Therefore, C languages perform null checks, and high-level languages implement NullPointerExceptions. Careful handling of null is essential.</p>
+
+  <h3>Tagged Pointers</h3>
+  <p>In Ruby, integers, boolean values (true/false), and nil are all objects. However, allocating memory every time these are used would make Ruby extremely slow.</p>
+  <p>Therefore, Ruby (especially CRuby) uses a technique where the lower few bits of pointer values are used as tags to distinguish the type of value. This is called tagged pointers.</p>
+
+  <h3>Ruby VALUE Internal Structure</h3>
+  <pre><code>Ruby's Internal Value (VALUE) Structure:
+64-bit data → Determine type by lower bits (tags)
+
+Tag patterns:
+...00  → Pointer: Address pointing to heap object
+...01  → Fixnum: Integer value itself (not a pointer)
+...100 (0x4) → nil: Special immediate value
+...000 (0x0) → false: Special immediate value  
+...010 (0x2) → true: Special immediate value</code></pre>
+
+  <h2>Key Insights</h2>
+  <h3>Ruby's nil vs C's NULL</h3>
+  <p>Unlike C's NULL (which is typically 0x0), Ruby's nil is not actually null. It's a special immediate value with the tag pattern 0x4, representing a specific type within Ruby's object system.</p>
+
+  <h3>Memory Safety</h3>
+  <p>This tagged pointer system allows Ruby to:</p>
+  <ul>
+    <li>Avoid null pointer dereferences</li>
+    <li>Provide type safety at the runtime level</li>
+    <li>Maintain object-oriented consistency where everything is an object</li>
+    <li>Optimize performance by avoiding heap allocation for common values</li>
+  </ul>
+
+  <h2>Conclusion</h2>
+  <p>Ruby's nil is not the same as null in lower-level languages. It's a carefully designed immediate value that maintains Ruby's "everything is an object" philosophy while providing memory safety and performance benefits. This tagged pointer approach is one of the clever implementation details that makes Ruby both safe and efficient.</p>
+
+</body>
+</html>

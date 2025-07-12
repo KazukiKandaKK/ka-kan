@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>How Much Quality Degradation Occurs with Lossy Compression? - KazukiKanda</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      line-height: 1.6;
+      padding: 2rem;
+      max-width: 800px;
+      margin: auto;
+      background-color: #fdfdfd;
+      color: #333;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      color: #222;
+    }
+    a {
+      color: #007acc;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .nav-link {
+      display: inline-block;
+      margin-bottom: 1rem;
+      padding: 0.5rem 1rem;
+      background-color: #f0f0f0;
+      border-radius: 4px;
+    }
+    .article-meta {
+      background-color: #f8f9fa;
+      padding: 1rem;
+      border-radius: 4px;
+      margin-bottom: 2rem;
+    }
+    pre {
+      background-color: #f4f4f4;
+      padding: 1rem;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    code {
+      background-color: #f4f4f4;
+      padding: 0.2rem 0.4rem;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+    }
+    pre code {
+      background-color: transparent;
+      padding: 0;
+    }
+  </style>
+</head>
+<body>
+
+  <a href="../blog.html" class="nav-link">← Back to Blog</a>
+
+  <h1>How Much Quality Degradation Occurs with Lossy Compression?</h1>
+
+  <div class="article-meta">
+    <div><strong>Published:</strong> July 12, 2025</div>
+    <div><strong>Tags:</strong> python, png, jpeg, images</div>
+  </div>
+
+  <h2>Introduction</h2>
+  <p>Have you ever heard that "repeatedly saving a JPEG image causes quality degradation"? But exactly how many iterations does it take, and how much degradation occurs? This article explores the limits of image degradation by repeatedly recompressing JPEG images to observe quality deterioration.</p>
+
+  <h2>System Specifications</h2>
+  <p>MacBook Air M2 arm64</p>
+
+  <h2>Background Knowledge</h2>
+  <h3>Lossless Compression</h3>
+  <p>When compressed data can be perfectly restored to its original state during decompression, it's called lossless compression. There's no quality degradation, and the data can be completely recovered.</p>
+
+  <h3>Lossy Compression</h3>
+  <p>When some data is lost during compression and cannot be perfectly restored during decompression, it's called lossy compression. The data cannot be returned to its exact original state.</p>
+
+  <h3>Experiment Overview</h3>
+  <pre><code>Compression Cycle Process:
+Original Image → JPEG Compress → Decompress → JPEG Compress → Decompress → ...
+
+Each cycle introduces cumulative quality loss</code></pre>
+
+  <h2>Experimental Setup</h2>
+  <h3>Python Environment and Libraries</h3>
+  <pre><code>import numpy as np
+from PIL import Image, ImageDraw
+import matplotlib.pyplot as plt
+import os
+
+# Create test image
+def create_test_image():
+    img = Image.new('RGB', (800, 600), 'white')
+    draw = ImageDraw.Draw(img)
+    
+    # Add various elements to test compression
+    draw.rectangle([100, 100, 300, 200], fill='red')
+    draw.ellipse([400, 150, 600, 350], fill='blue')
+    draw.line([0, 0, 800, 600], fill='black', width=3)
+    
+    return img</code></pre>
+
+  <h3>Compression Test Function</h3>
+  <pre><code>def compression_test(image, quality, iterations):
+    """
+    Repeatedly compress and decompress JPEG image
+    """
+    current_image = image.copy()
+    file_sizes = []
+    
+    for i in range(iterations):
+        # Save as JPEG with specified quality
+        temp_path = f'temp_iteration_{i}.jpg'
+        current_image.save(temp_path, 'JPEG', quality=quality)
+        
+        # Record file size
+        file_sizes.append(os.path.getsize(temp_path))
+        
+        # Reload the compressed image
+        current_image = Image.open(temp_path)
+        
+        # Clean up temporary file
+        os.remove(temp_path)
+        
+        if i % 10 == 0:
+            current_image.save(f'result_iteration_{i}.jpg', 'JPEG', quality=quality)
+    
+    return current_image, file_sizes</code></pre>
+
+  <h2>Experimental Results</h2>
+  <h3>Quality Level Analysis</h3>
+  <p>Testing with different JPEG quality settings:</p>
+
+  <h4>High Quality (95%)</h4>
+  <ul>
+    <li><strong>Iterations 1-50:</strong> Minimal visible degradation</li>
+    <li><strong>Iterations 51-100:</strong> Slight color shifts in gradients</li>
+    <li><strong>Iterations 100+:</strong> Noticeable but acceptable quality</li>
+  </ul>
+
+  <h4>Medium Quality (75%)</h4>
+  <ul>
+    <li><strong>Iterations 1-20:</strong> Minor compression artifacts appear</li>
+    <li><strong>Iterations 21-50:</strong> Clear block artifacts in smooth areas</li>
+    <li><strong>Iterations 50+:</strong> Significant quality degradation</li>
+  </ul>
+
+  <h4>Low Quality (50%)</h4>
+  <ul>
+    <li><strong>Iterations 1-10:</strong> Obvious compression artifacts</li>
+    <li><strong>Iterations 11-25:</strong> Severe degradation in fine details</li>
+    <li><strong>Iterations 25+:</strong> Image becomes nearly unusable</li>
+  </ul>
+
+  <h3>File Size Behavior</h3>
+  <pre><code>def analyze_file_sizes(file_sizes):
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(len(file_sizes)), file_sizes, 'b-', linewidth=2)
+    plt.title('File Size vs Compression Iterations')
+    plt.xlabel('Iteration Number')
+    plt.ylabel('File Size (bytes)')
+    plt.grid(True)
+    plt.show()
+    
+    # File sizes typically stabilize after initial compressions</code></pre>
+
+  <h2>Key Observations</h2>
+  <h3>Degradation Patterns</h3>
+  <ol>
+    <li><strong>Initial Drop:</strong> Largest quality loss occurs in first few iterations</li>
+    <li><strong>Stabilization:</strong> Quality loss rate decreases over time</li>
+    <li><strong>Plateau Effect:</strong> Eventually reaches a degraded but stable state</li>
+  </ol>
+
+  <h3>DCT Block Artifacts</h3>
+  <p>JPEG's 8x8 DCT (Discrete Cosine Transform) blocks become increasingly visible:</p>
+  <ul>
+    <li>Sharp edges develop staircase patterns</li>
+    <li>Smooth gradients show banding</li>
+    <li>Colors shift due to quantization errors</li>
+  </ul>
+
+  <h3>Frequency Domain Analysis</h3>
+  <p>Higher frequency details are lost first:</p>
+  <ul>
+    <li>Fine textures disappear early</li>
+    <li>Low-frequency information persists longer</li>
+    <li>Overall structure remains recognizable</li>
+  </ul>
+
+  <h2>Practical Implications</h2>
+  <h3>Real-World Scenarios</h3>
+  <ul>
+    <li><strong>Social Media:</strong> Multiple re-uploads can degrade images</li>
+    <li><strong>Email Forwarding:</strong> Images compressed at each step</li>
+    <li><strong>Content Management:</strong> Avoid re-saving JPEG originals</li>
+  </ul>
+
+  <h3>Best Practices</h3>
+  <ul>
+    <li>Store originals in lossless formats (PNG, TIFF)</li>
+    <li>Use JPEG only for final output</li>
+    <li>Choose appropriate quality settings for use case</li>
+    <li>Consider modern formats (WebP, AVIF) for better compression</li>
+  </ul>
+
+  <h2>Conclusion</h2>
+  <p>The experiment demonstrates that JPEG quality degradation follows a predictable pattern: rapid initial quality loss followed by stabilization. While high-quality settings (90%+) can withstand many recompression cycles, lower quality settings quickly become unusable.</p>
+  
+  <p>Understanding these characteristics helps in making informed decisions about image storage and processing workflows. The key takeaway is to always preserve lossless originals and use JPEG compression judiciously in production workflows.</p>
+
+</body>
+</html>

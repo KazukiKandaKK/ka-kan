@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ruby Memory Consumption Analysis: Classes and Methods - KazukiKanda</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      line-height: 1.6;
+      padding: 2rem;
+      max-width: 800px;
+      margin: auto;
+      background-color: #fdfdfd;
+      color: #333;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      color: #222;
+    }
+    a {
+      color: #007acc;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .nav-link {
+      display: inline-block;
+      margin-bottom: 1rem;
+      padding: 0.5rem 1rem;
+      background-color: #f0f0f0;
+      border-radius: 4px;
+    }
+    .article-meta {
+      background-color: #f8f9fa;
+      padding: 1rem;
+      border-radius: 4px;
+      margin-bottom: 2rem;
+    }
+    pre {
+      background-color: #f4f4f4;
+      padding: 1rem;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    code {
+      background-color: #f4f4f4;
+      padding: 0.2rem 0.4rem;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+    }
+    pre code {
+      background-color: transparent;
+      padding: 0;
+    }
+    img {
+      max-width: 100%;
+      height: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <a href="../blog.html" class="nav-link">← Back to Blog</a>
+
+  <h1>Ruby Memory Consumption Analysis: Classes and Methods</h1>
+
+  <div class="article-meta">
+    <div><strong>Published:</strong> June 26, 2025</div>
+    <div><strong>Tags:</strong> ruby, memory, memory-management</div>
+  </div>
+
+  <h2>Summary</h2>
+  <p>This article analyzes Ruby's memory usage patterns when defining classes and methods, providing insights into memory consumption at the code level.</p>
+
+  <h2>System Specifications</h2>
+  <p>MacBook Air M2 arm64</p>
+
+  <h2>Objective</h2>
+  <p>To visualize and understand how much memory is consumed when defining classes and methods in Ruby, helping developers develop a better intuition for memory usage in their code.</p>
+
+  <h2>Background Knowledge</h2>
+  <h3>Heap Area & Memory Allocation</h3>
+  <p>The heap is a region where memory can be dynamically allocated and deallocated during program execution.<br>
+  Based on C language memory allocation concepts, the memory layout starts from address 0 with reserved areas, followed by the text segment containing machine code instructions. Static data contains constants and static variables. The heap area, as mentioned, allows dynamic memory allocation and deallocation during program execution. The stack area stores local variables, function arguments, and return values, which are stacked when functions start and deallocated when functions end.</p>
+  <img src="https://storage.googleapis.com/zenn-user-upload/16af15391dd4-20250625.png" alt="">
+
+  <h2>Setup</h2>
+  <h3>Memory Measurement Code</h3>
+  <pre><code>require "json"
+require "objspace"
+require "net/http"
+require "uri"
+
+# メモリ集計
+def snapshot(label, mod)
+  meth_memsize = mod.instance_methods(false)
+                    .sum { |m| ObjectSpace.memsize_of(mod.instance_method(m)) }
+  iseq_memsize = mod.instance_methods(false)
+                    .sum { |m| ObjectSpace.memsize_of(RubyVM::InstructionSequence.of(mod.instance_method(m))) }
+  iseq_bytes   = mod.instance_methods(false)
+                    .sum { |m| RubyVM::InstructionSequence.of(mod.instance_method(m)).to_binary.bytesize }
+
+  puts "== #{label} =="
+  puts "  Class memsize   : #{ObjectSpace.memsize_of(mod)} B"
+  puts "  Method memsize  : #{meth_memsize} B"
+  puts "  ISeq  memsize   : #{iseq_memsize} B"
+  puts "  ISeq  bytes     : #{iseq_bytes} B"
+  puts
+end
+
+# STEP 0: 空クラス
+class Demo; end
+snapshot("STEP 0 (class only)", Demo)
+
+# STEP 1: 1のみのメソッド
+class Demo
+  def tiny; 1; end
+end
+snapshot("STEP 1 (+ tiny)", Demo)
+
+# STEP 2: 通常 FizzBuzz
+class Demo
+  def fizzbuzz(n = 100)
+    (1..n).map { |i|
+      if i % 15 == 0 then 'FizzBuzz'
+      elsif i %  3 == 0 then 'Fizz'
+      elsif i %  5 == 0 then 'Buzz'
+      else i end
+    }
+  end
+end
+snapshot("STEP 2 (+ fizzbuzz)", Demo)
+
+# STEP 3: 再帰版 FizzBuzz
+class Demo
+  def fizzbuzz_recursive(n, i = 1, acc = [])
+    return acc if i > n
+    acc << (i % 15 == 0 ? 'FizzBuzz' :
+            i % 3  == 0 ? 'Fizz'     :
+            i % 5  == 0 ? 'Buzz'     : i)
+    fizzbuzz_recursive(n, i + 1, acc)
+  end
+end
+snapshot("STEP 3 (+ fizzbuzz_recursive)", Demo)
+
+# STEP 4: server.rb へ HTTP リクエストを送るメソッド
+class Demo
+  def fetch_fizzbuzz_remote(n = 100, host = "127.0.0.1", port = 4567)
+    uri  = URI("http://#{host}:#{port}/fizzbuzz?n=#{n}")
+    JSON.parse(Net::HTTP.get(uri))
+  end
+end
+# 実際に100件取ってみる
+puts "Remote result (first 10) => #{Demo.new.fetch_fizzbuzz_remote(100).first(30)}"
+snapshot("STEP 4 (+ fetch_fizzbuzz_remote)", Demo)
+
+# STEP 5: メソッドを2つにする
+class Demo
+  def tiny; 1; end
+  def tiny2; 1; end
+end
+snapshot("STEP 5 (+ tiny2)", Demo)
+
+# STEP 6: メソッドを3つにする
+class Demo
+  def tiny; 1; end
+  def tiny2; 1; end
+  def tiny3; 1; end
+end
+snapshot("STEP 6 (+ tiny3)", Demo)
+
+# STEP 7: メソッドを10個にする
+class Demo
+  def tiny; 1; end
+  def tiny2; 1; end
+  def tiny3; 1; end
+  def tiny4; 1; end
+  def tiny5; 1; end
+  def tiny6; 1; end
+  def tiny7; 1; end
+  def tiny8; 1; end
+  def tiny9; 1; end
+  def tiny10; 1; end
+end
+snapshot("STEP 7 (+ tiny10)", Demo)</code></pre>
+
+  <h3>FizzBuzz Server</h3>
+  <pre><code>#!/usr/bin/env ruby
+# stdlib だけで動く FizzBuzz API サーバ
+require 'webrick'   # HTTP サーバ
+require 'json'      # JSON 生成
+
+class FizzBuzzServlet < WEBrick::HTTPServlet::AbstractServlet
+  def do_GET(req, res)
+    n = (req.query['n'] || 100).to_i
+    res['Content-Type'] = 'application/json'
+    res.status = 200
+    res.body   = JSON.dump(fizzbuzz(n))
+  end
+
+  private
+
+  def fizzbuzz(n)
+    (1..n).map do |i|
+      if    i % 15 == 0 then 'FizzBuzz'
+      elsif i %  3 == 0 then 'Fizz'
+      elsif i %  5 == 0 then 'Buzz'
+      else i end
+    end
+  end
+end
+
+server = WEBrick::HTTPServer.new(Port: 4567, BindAddress: '0.0.0.0')
+server.mount '/fizzbuzz', FizzBuzzServlet
+trap('INT') { server.shutdown }
+server.start</code></pre>
+
+  <h2>Results Comparison</h2>
+  <h3>Output Interpretation</h3>
+  <p>Here's how to read the measurement results:</p>
+  <pre><code>== STEP N ==
+  Class memsize   : Memory area occupied by the class
+  Method memsize  : Memory area occupied by methods
+  ISeq  memsize   : Ruby instruction sequence memory (local variables, etc.)
+  ISeq  bytes     : C-level memory occupation</code></pre>
+
+  <pre><code>== STEP 0 (class only) ==
+  Class memsize   : 192 B
+  Method memsize  : 0 B
+  ISeq  memsize   : 0 B
+  ISeq  bytes     : 0 B
+
+== STEP 1 (+ tiny) ==
+  Class memsize   : 256 B
+  Method memsize  : 80 B
+  ISeq  memsize   : 456 B
+  ISeq  bytes     : 216 B
+
+== STEP 2 (+ fizzbuzz) ==
+  Class memsize   : 256 B
+  Method memsize  : 160 B
+  ISeq  memsize   : 1112 B
+  ISeq  bytes     : 932 B
+
+== STEP 3 (+ fizzbuzz_recursive) ==
+  Class memsize   : 256 B
+  Method memsize  : 240 B
+  ISeq  memsize   : 3128 B
+  ISeq  bytes     : 1720 B
+
+Remote result (first 10) => [1, 2, "Fizz", 4, "Buzz", "Fizz", 7, 8, "Fizz", "Buzz", 11, "Fizz", 13, 14, "FizzBuzz", 16, 17, "Fizz", 19, "Buzz", "Fizz", 22, 23, "Fizz", "Buzz", 26, "Fizz", 28, 29, "FizzBuzz"]
+== STEP 4 (+ fetch_fizzbuzz_remote) ==
+  Class memsize   : 528 B
+  Method memsize  : 320 B
+  ISeq  memsize   : 4592 B
+  ISeq  bytes     : 2424 B
+
+== STEP 5 (+ tiny2) ==
+  Class memsize   : 528 B
+  Method memsize  : 400 B
+  ISeq  memsize   : 5048 B
+  ISeq  bytes     : 2640 B
+
+== STEP 6 (+ tiny3) ==
+  Class memsize   : 528 B
+  Method memsize  : 480 B
+  ISeq  memsize   : 5504 B
+  ISeq  bytes     : 2856 B
+
+== STEP 7 (+ tiny10) ==
+  Class memsize   : 912 B
+  Method memsize  : 1040 B
+  ISeq  memsize   : 8696 B
+  ISeq  bytes     : 4372 B</code></pre>
+
+  <h2>Conclusion</h2>
+  <p>The analysis reveals that defining a class in Ruby consumes approximately 256 bytes, with each method adding roughly 80 bytes.<br>
+  Even meaningless methods contribute to increased memory usage in both class and method areas. Additionally, implementing API call logic significantly increases the class's memory footprint.<br>
+  Surprisingly, recursive calls consume considerable memory, suggesting that future comparisons with more practical functions would be valuable for understanding real-world memory patterns.</p>
+
+</body>
+</html>

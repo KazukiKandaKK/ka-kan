@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Building a Custom NTP Client in Rust to Explore Time Synchronization - KazukiKanda</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      line-height: 1.6;
+      padding: 2rem;
+      max-width: 800px;
+      margin: auto;
+      background-color: #fdfdfd;
+      color: #333;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      color: #222;
+    }
+    a {
+      color: #007acc;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    .nav-link {
+      display: inline-block;
+      margin-bottom: 1rem;
+      padding: 0.5rem 1rem;
+      background-color: #f0f0f0;
+      border-radius: 4px;
+    }
+    .article-meta {
+      background-color: #f8f9fa;
+      padding: 1rem;
+      border-radius: 4px;
+      margin-bottom: 2rem;
+    }
+    pre {
+      background-color: #f4f4f4;
+      padding: 1rem;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    code {
+      background-color: #f4f4f4;
+      padding: 0.2rem 0.4rem;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+    }
+    pre code {
+      background-color: transparent;
+      padding: 0;
+    }
+    img {
+      max-width: 100%;
+      height: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <a href="../blog.html" class="nav-link">← Back to Blog</a>
+
+  <h1>Building a Custom NTP Client in Rust to Explore Time Synchronization</h1>
+
+  <div class="article-meta">
+    <div><strong>Published:</strong> July 10, 2025</div>
+    <div><strong>Tags:</strong> rust, ntp, networking</div>
+  </div>
+
+  <h2>Introduction</h2>
+  <p>While NTP is often an overlooked protocol in daily work, it's actually a critical component of networked systems. This article explores building a custom NTP client in Rust to deepen our understanding of time synchronization mechanisms.</p>
+
+  <h2>System Specifications</h2>
+  <p>MacBook Air M2 arm64</p>
+
+  <h2>Background Knowledge</h2>
+  <h3>What is NTP?</h3>
+  <p>NTP stands for Network Time Protocol, a protocol designed to synchronize the clocks of devices connected to a network. Devices not synchronized with NTP servers lack accurate time. When setting up an OS disconnected from the internet, date and time values become arbitrary.</p>
+  <p>While this might not matter for personal devices, it becomes problematic when providing services like SaaS. If log timestamps differ across servers, tracking events chronologically becomes difficult. To accurately understand when specific events occurred, systems must synchronize with NTP servers for precise timekeeping.</p>
+
+  <h3>NTP Hierarchy Diagram</h3>
+  <pre><code>Time Sources (Physical Layer)
+├── Stratum 0 (Atomic clocks, GPS)
+│
+NTP Network
+├── Stratum 1 Servers (Primary time servers)
+├── Stratum 2 Servers (Secondary time servers)
+├── Stratum 3 Servers (Tertiary time servers)
+└── Clients (PCs, smartphones, etc.)</code></pre>
+
+  <h2>Setup</h2>
+  <h3>Docker Environment Preparation</h3>
+  <pre><code>mkdir -p ntp-client && cd ntp-client</code></pre>
+
+  <h4>Dockerfile</h4>
+  <pre><code># Use the latest official Rust image as base
+FROM rust:latest
+
+# Update package list and install vim
+# -y option skips interactive confirmation
+RUN apt-get update && apt-get install -y vim
+
+# Set working directory inside container
+WORKDIR /work
+
+# Default command when container starts
+CMD ["bash"]</code></pre>
+
+  <h3>Rust Environment Setup</h3>
+  <pre><code>docker build -t ntp-client-dev .
+docker run -it --rm -v "$(pwd)":/work ntp-client-dev
+cargo init .
+vim Cargo.toml</code></pre>
+
+  <p>Add <code>chrono</code> to dependencies in <code>Cargo.toml</code>:</p>
+  <pre><code>[package]
+name = "work"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chrono = "0.4"</code></pre>
+
+  <h3>Source Code Implementation</h3>
+  <pre><code>// src/main.rs
+use std::net::UdpSocket;
+use chrono::{DateTime, Utc};
+
+struct NtpPacket {
+    data: [u8; 48],
+}
+
+impl NtpPacket {
+    fn new_request() -> Self {
+        let mut data = [0u8; 48];
+        data[0] = 0x23; // LI=0, VN=4, Mode=3
+        Self { data }
+    }
+
+    fn get_transmit_timestamp(&self) -> u64 {
+        let bytes: [u8; 8] = self.data[40..48].try_into().unwrap();
+        u64::from_be_bytes(bytes)
+    }
+
+    fn to_datetime(ntp_timestamp: u64) -> DateTime<Utc> {
+        let ntp_seconds = (ntp_timestamp >> 32) as u32;
+        const NTP_UNIX_EPOCH_DIFF: u32 = 2_208_988_800;
+        let unix_seconds = ntp_seconds.saturating_sub(NTP_UNIX_EPOCH_DIFF);
+        DateTime::from_timestamp(unix_seconds as i64, 0).unwrap()
+    }
+}
+
+fn main() -> std::io::Result<()> {
+    println!("--- Rust NTP Client (running in Docker) ---");
+    let request_packet = NtpPacket::new_request();
+    let socket = UdpSocket::bind("0.0.0.0:0")?;
+    socket.connect("time.google.com:123")?;
+    println!("Sending NTP request to time.google.com...");
+    socket.send(&request_packet.data)?;
+    let mut response_packet = NtpPacket { data: [0u8; 48] };
+    socket.recv_from(&mut response_packet.data)?;
+    println!("Received NTP response.");
+    let transmit_timestamp = response_packet.get_transmit_timestamp();
+    let datetime = NtpPacket::to_datetime(transmit_timestamp);
+    println!("\n--- Time Sync Result ---");
+    println!("NTP Server Time (UTC): {}", datetime);
+    let system_time = Utc::now();
+    println!("Container Time (UTC):  {}", system_time);
+    let diff = system_time.signed_duration_since(datetime);
+    println!("\nSystem clock is off by: {} ms", diff.num_milliseconds());
+    Ok(())
+}</code></pre>
+
+  <h2>Experiment Results</h2>
+  <pre><code>cargo run
+   Compiling work v0.1.0 (/work)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.22s
+     Running `/work/target/debug/work`
+--- Rust NTP Client (running in Docker) ---
+Sending NTP request to time.google.com...
+Received NTP response.
+
+--- Time Sync Result ---
+NTP Server Time (UTC): 2025-07-06 07:34:21 UTC
+Container Time (UTC):  2025-07-06 07:34:21.256380341 UTC
+
+System clock is off by: 256 ms</code></pre>
+
+  <h2>Conclusion</h2>
+  <p>This exploration of NTP implementation in Rust has provided valuable insights into time synchronization mechanisms. The custom NTP client successfully demonstrates the protocol's operation and reveals the typical millisecond-level discrepancies between system clocks and authoritative time sources. This understanding is crucial for building reliable distributed systems that depend on accurate timekeeping.</p>
+
+</body>
+</html>
